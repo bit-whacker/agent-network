@@ -154,38 +154,86 @@ function showTab(tabName) {
 async function sendProfileMessage() {
     const input = document.getElementById('profile-input');
     const message = input.value.trim();
-    
+
     if (!message) return;
-    
+
     // Add user message to chat
     addMessage('user', message);
     input.value = '';
-    
+
+    // Show typing indicator
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message agent typing';
+    typingDiv.innerHTML = '<strong>🤖 Agent</strong><div>Thinking...</div>';
+    document.getElementById('profile-messages').appendChild(typingDiv);
+
     try {
         const response = await fetch(`${API_BASE}/api/profile/chat?user_id=${currentUser.id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_message: message })
         });
-        
+
+        // Remove typing indicator
+        typingDiv.remove();
+
         const data = await response.json();
-        
+
         // Add agent response
         addMessage('agent', data.message);
-        
+
         // Update profile data
         if (data.profile_data) {
             profileData = data.profile_data;
+            updateProfileProgress(data.profile_data, data.missing_fields || []);
         }
-        
+
         // Show profile preview if complete
         if (data.is_complete) {
             showProfilePreview();
         }
     } catch (error) {
+        typingDiv.remove();
         console.error('Error sending message:', error);
         addMessage('agent', 'Sorry, I encountered an error. Please try again.');
     }
+}
+
+function updateProfileProgress(profile, missingFields) {
+    const progressDiv = document.getElementById('profile-progress');
+    if (!progressDiv) return;
+
+    const fields = [
+        { key: 'title', label: 'Title' },
+        { key: 'skills', label: 'Skills' },
+        { key: 'experience_years', label: 'Experience' },
+        { key: 'availability', label: 'Availability' },
+        { key: 'location', label: 'Location' },
+        { key: 'bio', label: 'Bio' }
+    ];
+
+    const completedCount = fields.filter(f => {
+        const val = profile[f.key];
+        return val !== null && val !== undefined && (Array.isArray(val) ? val.length > 0 : true);
+    }).length;
+
+    const percentage = Math.round((completedCount / fields.length) * 100);
+
+    progressDiv.innerHTML = `
+        <div class="progress-header">Profile Completion: ${percentage}%</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: ${percentage}%"></div>
+        </div>
+        <div class="progress-fields">
+            ${fields.map(f => {
+                const val = profile[f.key];
+                const isComplete = val !== null && val !== undefined && (Array.isArray(val) ? val.length > 0 : true);
+                return `<span class="field-status ${isComplete ? 'complete' : 'pending'}">${f.label}</span>`;
+            }).join('')}
+        </div>
+    `;
+
+    progressDiv.style.display = 'block';
 }
 
 function addMessage(type, text) {
@@ -210,7 +258,11 @@ function addMessage(type, text) {
 function showProfilePreview() {
     const previewDiv = document.getElementById('profile-data');
     const contentDiv = document.getElementById('profile-preview-content');
-    
+
+    const locationStr = profileData.location
+        ? `${profileData.location.city || ''}${profileData.location.city && profileData.location.country ? ', ' : ''}${profileData.location.country || ''}`
+        : 'Not provided';
+
     contentDiv.innerHTML = `
         <div class="profile-field">
             <label>Title:</label>
@@ -218,11 +270,11 @@ function showProfilePreview() {
         </div>
         <div class="profile-field">
             <label>Skills:</label>
-            <div>${(profileData.skills || []).join(', ') || 'Not provided'}</div>
+            <div class="skills-list">${(profileData.skills || []).map(s => `<span class="skill-tag">${s}</span>`).join('') || 'Not provided'}</div>
         </div>
         <div class="profile-field">
             <label>Experience:</label>
-            <div>${profileData.experience_years || 'Not provided'} years</div>
+            <div>${profileData.experience_years ? `${profileData.experience_years} years` : 'Not provided'}</div>
         </div>
         <div class="profile-field">
             <label>Availability:</label>
@@ -230,10 +282,14 @@ function showProfilePreview() {
         </div>
         <div class="profile-field">
             <label>Location:</label>
-            <div>${profileData.location ? `${profileData.location.city}, ${profileData.location.country}` : 'Not provided'}</div>
+            <div>${locationStr}</div>
+        </div>
+        <div class="profile-field">
+            <label>Bio:</label>
+            <div>${profileData.bio || 'Not provided'}</div>
         </div>
     `;
-    
+
     previewDiv.style.display = 'block';
 }
 
