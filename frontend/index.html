@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Network - Professional Networking</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Agent Network</h1>
+            <p>AI-powered professional networking</p>
+        </header>
+
+        <!-- User Selection -->
+        <div id="user-selection" class="section">
+            <h2>Welcome!</h2>
+            <div class="input-group">
+                <input type="email" id="user-email" placeholder="Your email" required>
+                <input type="text" id="user-name" placeholder="Your name" required>
+                <button onclick="startSession()" class="btn-primary">Get Started</button>
+            </div>
+            
+            <div class="divider">OR</div>
+            
+            <div class="existing-users">
+                <h3>Existing Users</h3>
+                <div id="users-list"></div>
+            </div>
+        </div>
+
+        <!-- Main Application (hidden initially) -->
+        <div id="main-app" style="display: none;">
+            <div class="user-info">
+                <span id="current-user"></span>
+                <button onclick="logout()" class="btn-secondary">Logout</button>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('profile')">📝 Build Profile</button>
+                <button class="tab" onclick="showTab('search')">🔍 Search Network</button>
+                <button class="tab" onclick="showTab('connections')">👥 Connections</button>
+            </div>
+
+            <!-- Profile Building Tab -->
+            <div id="profile-tab" class="tab-content active">
+                <div class="section">
+                    <h2>Build Your Profile</h2>
+                    <p class="help-text">Chat with the AI agent to create your professional profile</p>
+                    
+                    <div id="profile-chat" class="chat-container">
+                        <div id="profile-messages" class="messages"></div>
+                    </div>
+                    
+                    <div class="input-group">
+                        <input type="text" id="profile-input" placeholder="Type your response..." 
+                               onkeypress="if(event.key==='Enter') sendProfileMessage()">
+                        <button onclick="sendProfileMessage()" class="btn-primary">Send</button>
+                    </div>
+
+                    <div id="profile-data" class="profile-preview" style="display: none;">
+                        <h3>Profile Preview</h3>
+                        <div id="profile-preview-content"></div>
+                        <button onclick="saveProfile()" class="btn-success">Save Profile</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Tab -->
+            <div id="search-tab" class="tab-content">
+                <div class="section">
+                    <h2>Search for Professionals</h2>
+                    <p class="help-text">Describe who you're looking for in natural language</p>
+                    
+                    <div class="input-group">
+                        <input type="text" id="search-input" 
+                               placeholder="e.g., Looking for a React developer in San Francisco"
+                               onkeypress="if(event.key==='Enter') searchNetwork()">
+                        <button onclick="searchNetwork()" class="btn-primary">Search</button>
+                    </div>
+
+                    <div id="search-loading" class="loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Agents are searching the network...</p>
+                    </div>
+
+                    <div id="search-results" class="results-container"></div>
+                </div>
+            </div>
+
+            <!-- Connections Tab -->
+            <div id="connections-tab" class="tab-content">
+                <div class="section">
+                    <h2>Your Network</h2>
+                    <p class="help-text">Professionals you're connected with</p>
+                    
+                    <div id="connections-list" class="connections-container"></div>
+
+                    <h3>Add Connection</h3>
+                    <div class="input-group">
+                        <select id="connect-user-select"></select>
+                        <button onclick="addConnection()" class="btn-primary">Connect</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
