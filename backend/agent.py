@@ -17,13 +17,13 @@ class ProfileBuilderAgent:
     def __init__(self):
         self.llm = ChatAnthropic(
             anthropic_api_key=ANTHROPIC_API_KEY,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=0.7
         )
 
         self.extraction_llm = ChatAnthropic(
             anthropic_api_key=ANTHROPIC_API_KEY,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=0
         )
 
@@ -140,6 +140,10 @@ Rules:
         is_complete = len(missing_fields) == 0
 
         # Build the prompt for the conversation
+        # Escape curly braces in JSON to prevent LangChain template interpretation
+        profile_json = json.dumps(updated_profile, indent=2).replace("{", "{{").replace("}", "}}")
+        missing_str = ', '.join(missing_fields) if missing_fields else 'All information collected!'
+
         system_prompt = f"""You are a friendly professional networking assistant helping {user_name} build their profile.
 
 Your goal is to gather these details through natural conversation:
@@ -151,9 +155,9 @@ Your goal is to gather these details through natural conversation:
 6. Brief bio (2-3 sentences about their professional background)
 
 Current profile status:
-{json.dumps(updated_profile, indent=2)}
+{profile_json}
 
-Still needed: {', '.join(missing_fields) if missing_fields else 'All information collected!'}
+Still needed: {missing_str}
 
 Guidelines:
 - Ask ONE question at a time about the missing information
@@ -213,7 +217,7 @@ class SearchAgent:
     def __init__(self):
         self.llm = ChatAnthropic(
             anthropic_api_key=ANTHROPIC_API_KEY,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=0
         )
 
@@ -290,7 +294,7 @@ class MatchEvaluationAgent:
     def __init__(self):
         self.llm = ChatAnthropic(
             anthropic_api_key=ANTHROPIC_API_KEY,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=0
         )
 
@@ -366,7 +370,7 @@ class EmbeddingGenerator:
     def __init__(self):
         self.llm = ChatAnthropic(
             anthropic_api_key=ANTHROPIC_API_KEY,
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=0
         )
 
