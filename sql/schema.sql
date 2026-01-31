@@ -437,7 +437,8 @@ CREATE INDEX idx_messages_created ON agent_messages(created_at);
 INSERT INTO users (id, email, name) VALUES
     ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'alice@example.com', 'Alice Designer'),
     ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'bob@example.com', 'Bob Developer'),
-    ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'carol@example.com', 'Carol Product Manager');
+    ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'carol@example.com', 'Carol Product Manager')
+ON CONFLICT DO NOTHING;
 
 -- Insert sample profiles
 INSERT INTO profiles (user_id, title, bio, skills, experience_years, availability, location) VALUES
@@ -467,13 +468,15 @@ INSERT INTO profiles (user_id, title, bio, skills, experience_years, availabilit
         6,
         'part-time',
         '{"city": "Austin", "country": "USA"}'
-    );
+    )
+ON CONFLICT DO NOTHING;
 
 -- Create connections (Alice knows Bob, Bob knows Carol, Alice knows Carol)
 INSERT INTO connections (user_a_id, user_b_id, trust_score) VALUES
     ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 0.9),
     ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 0.85),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 0.95);
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 0.95)
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- MCP SERVER TOOL DEFINITIONS (JSON Format for Claude)
