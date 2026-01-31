@@ -83,9 +83,50 @@ function showMainApp() {
     document.getElementById('user-selection').style.display = 'none';
     document.getElementById('main-app').style.display = 'block';
     document.getElementById('current-user').textContent = `👤 ${currentUser.name}`;
-    
+
     loadConnections();
     loadAllUsers();
+
+    // Initialize profile chat if not already started
+    if (!conversationStarted) {
+        initializeProfileChat();
+    }
+}
+
+// Initialize profile building conversation
+async function initializeProfileChat() {
+    try {
+        // Check if user already has a profile
+        const profileResponse = await fetch(`${API_BASE}/api/profile/${currentUser.id}`);
+        const profileData = await profileResponse.json();
+
+        // If user has a complete profile, show a welcome back message
+        if (profileData && profileData.profile && profileData.profile.title) {
+            addMessage('agent', `Welcome back, ${currentUser.name}! Your profile is already set up. Feel free to update it by chatting with me, or head to the Search tab to find professionals in your network.`);
+            conversationStarted = true;
+            return;
+        }
+
+        // Start profile building for users without a complete profile
+        const response = await fetch(`${API_BASE}/api/profile/start?email=${encodeURIComponent(currentUser.email)}&name=${encodeURIComponent(currentUser.name)}`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        // Update user ID in case it changed
+        currentUser.id = data.user_id;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+        // Add first agent message
+        addMessage('agent', data.message);
+        conversationStarted = true;
+
+    } catch (error) {
+        console.error('Error initializing profile chat:', error);
+        addMessage('agent', `Hi ${currentUser.name}! I'm here to help you build your professional profile. Let's start - what is your current job title or professional role?`);
+        conversationStarted = true;
+    }
 }
 
 // ============================================================================
