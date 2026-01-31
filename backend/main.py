@@ -6,11 +6,11 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.models import (
-    ProfileQuestion, ProfileData, SearchRequest, 
+    ProfileQuestion, ProfileData, SearchRequest,
     SearchResponse, MatchResult, AgentResponse, ConnectionCreate
 )
 from backend.database import execute_query, execute_function
-from backend.agent import profile_builder, search_agent, match_evaluator
+from backend.agent import profile_builder, search_agent, match_evaluator, embedding_generator
 
 app = FastAPI(title="Agent Network API", version="1.0.0")
 
@@ -23,17 +23,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Store conversation states (in production, use Redis or database)
-conversation_states = {}
+# Store user names for conversation context
+user_names = {}
+
 
 @app.get("/")
 def read_root():
     return {"message": "Agent Network API", "version": "1.0.0"}
 
+
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
 
 # ============================================================================
 # Profile Building Endpoints
@@ -48,7 +51,7 @@ def start_profile_building(email: str, name: str):
             "SELECT id FROM users WHERE email = :email",
             {"email": email}
         )
-        
+
         if existing:
             user_id = existing[0]['id']
         else:
@@ -57,87 +60,103 @@ def start_profile_building(email: str, name: str):
                 {"email": email, "name": name}
             )
             user_id = result[0]['id']
-        
+
+        user_id_str = str(user_id)
+
+        # Store user name for conversation context
+        user_names[user_id_str] = name
+
         # Reset agent memory for new conversation
-        profile_builder.reset()
-        
-        # Store conversation state
-        conversation_states[str(user_id)] = {
-            "profile_data": {},
-            "step": "started"
-        }
-        
+        profile_builder.reset(user_id_str)
+
         # Get first question from agent
         response = profile_builder.chat(
-            f"Hi! I'm {name}. I want to build my profile.",
-            {}
+            f"Hi! I'm {name}. I'd like to build my professional profile.",
+            user_id_str,
+            name
         )
-        
+
         return {
-            "user_id": str(user_id),
+            "user_id": user_id_str,
             "message": response["message"],
-            "is_complete": False
+            "is_complete": response["is_complete"],
+            "profile_data": response["profile_data"],
+            "missing_fields": response.get("missing_fields", [])
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/profile/chat")
 def continue_profile_chat(question: ProfileQuestion, user_id: UUID):
     """Continue profile building conversation"""
     try:
         user_id_str = str(user_id)
-        
-        # Get conversation state
-        state = conversation_states.get(user_id_str, {"profile_data": {}})
-        
+
+        # Get user name
+        user_name = user_names.get(user_id_str, "User")
+
+        # If we don't have the name, try to get it from DB
+        if user_name == "User":
+            user_data = execute_query(
+                "SELECT name FROM users WHERE id = :user_id",
+                {"user_id": user_id_str}
+            )
+            if user_data:
+                user_name = user_data[0]['name']
+                user_names[user_id_str] = user_name
+
         # Chat with agent
         response = profile_builder.chat(
             question.user_message,
-            state["profile_data"]
+            user_id_str,
+            user_name
         )
-        
-        # Update state
-        conversation_states[user_id_str] = {
-            "profile_data": response["profile_data"],
-            "step": "complete" if response["is_complete"] else "in_progress"
-        }
-        
+
         return {
             "message": response["message"],
             "is_complete": response["is_complete"],
-            "profile_data": response["profile_data"]
+            "profile_data": response["profile_data"],
+            "missing_fields": response.get("missing_fields", [])
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/profile/save")
 def save_profile(profile: ProfileData):
     """Save completed profile"""
     try:
+        user_id_str = str(profile.user_id)
+
         # Check if profile exists
         existing = execute_query(
             "SELECT id FROM profiles WHERE user_id = :user_id",
-            {"user_id": str(profile.user_id)}
+            {"user_id": user_id_str}
         )
-        
+
+        # Prepare profile data
+        skills_json = json.dumps(profile.skills) if profile.skills else '[]'
+        location_json = json.dumps(profile.location) if profile.location else None
+
         if existing:
             # Update existing
             execute_query("""
-                UPDATE profiles 
+                UPDATE profiles
                 SET title = :title, bio = :bio, skills = :skills::jsonb,
-                    experience_years = :exp, availability = :avail, 
+                    experience_years = :exp, availability = :avail,
                     location = :loc::jsonb, updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = :user_id
             """, {
-                "user_id": str(profile.user_id),
+                "user_id": user_id_str,
                 "title": profile.title,
                 "bio": profile.bio,
-                "skills": json.dumps(profile.skills),
+                "skills": skills_json,
                 "exp": profile.experience_years,
                 "avail": profile.availability,
-                "loc": json.dumps(profile.location) if profile.location else None
+                "loc": location_json
             })
         else:
             # Insert new
@@ -145,20 +164,21 @@ def save_profile(profile: ProfileData):
                 INSERT INTO profiles (user_id, title, bio, skills, experience_years, availability, location)
                 VALUES (:user_id, :title, :bio, :skills::jsonb, :exp, :avail, :loc::jsonb)
             """, {
-                "user_id": str(profile.user_id),
+                "user_id": user_id_str,
                 "title": profile.title,
                 "bio": profile.bio,
-                "skills": json.dumps(profile.skills),
+                "skills": skills_json,
                 "exp": profile.experience_years,
                 "avail": profile.availability,
-                "loc": json.dumps(profile.location) if profile.location else None
+                "loc": location_json
             })
-        
+
         # Clear conversation state
-        conversation_states.pop(str(profile.user_id), None)
-        
-        return {"message": "Profile saved successfully", "user_id": str(profile.user_id)}
-    
+        profile_builder.reset(user_id_str)
+        user_names.pop(user_id_str, None)
+
+        return {"message": "Profile saved successfully", "user_id": user_id_str}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
