@@ -145,9 +145,9 @@ def save_profile(profile: ProfileData):
             # Update existing
             execute_query("""
                 UPDATE profiles
-                SET title = :title, bio = :bio, skills = :skills::jsonb,
+                SET title = :title, bio = :bio, skills = CAST(:skills AS jsonb),
                     experience_years = :exp, availability = :avail,
-                    location = :loc::jsonb, updated_at = CURRENT_TIMESTAMP
+                    location = CAST(:loc AS jsonb), updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = :user_id
             """, {
                 "user_id": user_id_str,
@@ -162,7 +162,7 @@ def save_profile(profile: ProfileData):
             # Insert new
             execute_query("""
                 INSERT INTO profiles (user_id, title, bio, skills, experience_years, availability, location)
-                VALUES (:user_id, :title, :bio, :skills::jsonb, :exp, :avail, :loc::jsonb)
+                VALUES (:user_id, :title, :bio, CAST(:skills AS jsonb), :exp, :avail, CAST(:loc AS jsonb))
             """, {
                 "user_id": user_id_str,
                 "title": profile.title,
@@ -192,7 +192,7 @@ async def search_network(search: SearchRequest):
     try:
         # Get user's connections
         connections = execute_function("get_connections", str(search.user_id))
-        
+
         if not connections or len(connections) == 0:
             return {
                 "request_id": str(uuid4()),
@@ -200,56 +200,42 @@ async def search_network(search: SearchRequest):
                 "total_contacted": 0,
                 "message": "No connections found. Connect with others first!"
             }
-        
+
         # Process search query with agent
         search_result = search_agent.process_search(search.query_text)
         structured_query = search_result["structured_query"]
-        
+        structured_json = json.dumps(structured_query)
+
         # Create service request
         request_result = execute_query("""
             INSERT INTO service_requests (requesting_user_id, query_text, structured_query)
-            VALUES (:user_id, :query, :structured::jsonb)
+            VALUES (:user_id, :query, CAST(:structured AS jsonb))
             RETURNING id
         """, {
             "user_id": str(search.user_id),
             "query": search.query_text,
-            "structured": json.dumps(structured_query)
+            "structured": structured_json
         })
-        
+
         request_id = request_result[0]['id']
-        
-        # Broadcast to network
-        broadcast_result = execute_function(
-            "broadcast_request",
-            str(search.user_id),
-            str(request_id)
-        )
-        
+
         # Evaluate each connected user
         matches = []
         for conn in connections:
             conn_user_id = conn['user_id']
-            
+
             # Get candidate profile
             profile_data = execute_function("get_user_profile", conn_user_id)
-            
+
             if not profile_data or not profile_data.get('profile'):
                 continue
-            
+
             # Evaluate match using agent
             evaluation = match_evaluator.evaluate(
                 structured_query,
                 profile_data['profile']
             )
-            
-            # Record response
-            execute_function(
-                "record_agent_response",
-                str(request_id),
-                conn_user_id,
-                json.dumps(evaluation)
-            )
-            
+
             if evaluation.get('is_match'):
                 matches.append({
                     "user_id": conn_user_id,
@@ -261,17 +247,18 @@ async def search_network(search: SearchRequest):
                     "trust_score": conn.get('trust_score', 1.0),
                     "final_score": evaluation['match_score'] * 0.7 + conn.get('trust_score', 1.0) * 0.3
                 })
-        
+
         # Sort by final score
         matches.sort(key=lambda x: x['final_score'], reverse=True)
-        
+
         return {
             "request_id": str(request_id),
             "matches": matches,
             "total_contacted": len(connections)
         }
-    
+
     except Exception as e:
+        print(f"Search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
