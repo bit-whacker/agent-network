@@ -266,10 +266,6 @@ async def search_network(search: SearchRequest):
             if not profile_data or not profile_data.get('profile'):
                 continue
 
-            # Evaluate match using agent
-            evaluation = match_evaluator.evaluate(
-                structured_query,
-                profile_data['profile']
             # Evaluate match using agent - with fallback
             try:
                 evaluation = match_evaluator.evaluate(
