@@ -9,11 +9,14 @@ let conversationStarted = false;
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadExistingUsers();
-    
+
     // Check if user is already logged in
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
         currentUser = JSON.parse(savedUser);
+        // Reset profile state on page load
+        profileData = {};
+        conversationStarted = false;
         showMainApp();
     }
 });
@@ -63,8 +66,18 @@ function selectExistingUser(user) {
         email: user.email,
         name: user.name
     };
-    
+
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+    // Reset profile state for the new user
+    profileData = {};
+    conversationStarted = false;
+    document.getElementById('profile-messages').innerHTML = '';
+    const progressDiv = document.getElementById('profile-progress');
+    if (progressDiv) progressDiv.style.display = 'none';
+    const previewDiv = document.getElementById('profile-data');
+    if (previewDiv) previewDiv.style.display = 'none';
+
     showMainApp();
 }
 

@@ -221,7 +221,7 @@ async def search_network(search: SearchRequest):
     try:
         # Get user's connections
         connections = execute_function("get_connections", str(search.user_id))
-        
+
         if not connections or len(connections) == 0:
             return {
                 "request_id": str(uuid4()),
@@ -229,11 +229,22 @@ async def search_network(search: SearchRequest):
                 "total_contacted": 0,
                 "message": "No connections found. Connect with others first!"
             }
-        
-        # Process search query with agent
-        search_result = search_agent.process_search(search.query_text)
-        structured_query = search_result["structured_query"]
-        
+
+        # Process search query with agent - with fallback
+        try:
+            search_result = search_agent.process_search(search.query_text)
+            structured_query = search_result["structured_query"]
+        except Exception as agent_err:
+            print(f"Search agent error: {agent_err}")
+            # Fallback to basic query structure
+            structured_query = {
+                "skills": [search.query_text],
+                "experience_level": None,
+                "min_experience_years": None,
+                "availability": None,
+                "location": None
+            }
+
         # Create service request
         request_result = execute_query("""
             INSERT INTO service_requests (requesting_user_id, query_text, structured_query)
@@ -244,33 +255,41 @@ async def search_network(search: SearchRequest):
             "query": search.query_text,
             "structured": json.dumps(structured_query)
         })
-        
+
         request_id = request_result[0]['id']
-        
+
         # Broadcast to network
         broadcast_result = execute_function(
             "broadcast_request",
             str(search.user_id),
             str(request_id)
         )
-        
+
         # Evaluate each connected user
         matches = []
         for conn in connections:
             conn_user_id = conn['user_id']
-            
+
             # Get candidate profile
             profile_data = execute_function("get_user_profile", conn_user_id)
-            
+
             if not profile_data or not profile_data.get('profile'):
                 continue
-            
-            # Evaluate match using agent
-            evaluation = match_evaluator.evaluate(
-                structured_query,
-                profile_data['profile']
-            )
-            
+
+            # Evaluate match using agent - with fallback
+            try:
+                evaluation = match_evaluator.evaluate(
+                    structured_query,
+                    profile_data['profile']
+                )
+            except Exception as eval_err:
+                print(f"Match evaluation error: {eval_err}")
+                # Fallback to simple matching
+                evaluation = match_evaluator._simple_match(
+                    structured_query,
+                    profile_data['profile']
+                )
+
             # Record response
             execute_function(
                 "record_agent_response",
@@ -278,7 +297,7 @@ async def search_network(search: SearchRequest):
                 conn_user_id,
                 json.dumps(evaluation)
             )
-            
+
             if evaluation.get('is_match'):
                 matches.append({
                     "user_id": conn_user_id,
@@ -290,17 +309,18 @@ async def search_network(search: SearchRequest):
                     "trust_score": conn.get('trust_score', 1.0),
                     "final_score": evaluation['match_score'] * 0.7 + conn.get('trust_score', 1.0) * 0.3
                 })
-        
+
         # Sort by final score
         matches.sort(key=lambda x: x['final_score'], reverse=True)
-        
+
         return {
             "request_id": str(request_id),
             "matches": matches,
             "total_contacted": len(connections)
         }
-    
+
     except Exception as e:
+        print(f"Search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
