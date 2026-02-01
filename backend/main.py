@@ -174,9 +174,9 @@ def save_profile(profile: ProfileData):
             # Update existing
             execute_query("""
                 UPDATE profiles
-                SET title = :title, bio = :bio, skills = :skills::jsonb,
+                SET title = :title, bio = :bio, skills = CAST(:skills AS jsonb),
                     experience_years = :exp, availability = :avail,
-                    location = :loc::jsonb, updated_at = CURRENT_TIMESTAMP
+                    location = CAST(:loc AS jsonb), updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = :user_id
             """, {
                 "user_id": user_id_str,
@@ -191,7 +191,7 @@ def save_profile(profile: ProfileData):
             # Insert new
             execute_query("""
                 INSERT INTO profiles (user_id, title, bio, skills, experience_years, availability, location)
-                VALUES (:user_id, :title, :bio, :skills::jsonb, :exp, :avail, :loc::jsonb)
+                VALUES (:user_id, :title, :bio, CAST(:skills AS jsonb), :exp, :avail, CAST(:loc AS jsonb))
             """, {
                 "user_id": user_id_str,
                 "title": profile.title,
@@ -230,30 +230,20 @@ async def search_network(search: SearchRequest):
                 "message": "No connections found. Connect with others first!"
             }
 
-        # Process search query with agent - with fallback
-        try:
-            search_result = search_agent.process_search(search.query_text)
-            structured_query = search_result["structured_query"]
-        except Exception as agent_err:
-            print(f"Search agent error: {agent_err}")
-            # Fallback to basic query structure
-            structured_query = {
-                "skills": [search.query_text],
-                "experience_level": None,
-                "min_experience_years": None,
-                "availability": None,
-                "location": None
-            }
+        # Process search query with agent
+        search_result = search_agent.process_search(search.query_text)
+        structured_query = search_result["structured_query"]
+        structured_json = json.dumps(structured_query)
 
         # Create service request
         request_result = execute_query("""
             INSERT INTO service_requests (requesting_user_id, query_text, structured_query)
-            VALUES (:user_id, :query, :structured::jsonb)
+            VALUES (:user_id, :query, CAST(:structured AS jsonb))
             RETURNING id
         """, {
             "user_id": str(search.user_id),
             "query": search.query_text,
-            "structured": json.dumps(structured_query)
+            "structured": structured_json
         })
 
         request_id = request_result[0]['id']
@@ -276,6 +266,10 @@ async def search_network(search: SearchRequest):
             if not profile_data or not profile_data.get('profile'):
                 continue
 
+            # Evaluate match using agent
+            evaluation = match_evaluator.evaluate(
+                structured_query,
+                profile_data['profile']
             # Evaluate match using agent - with fallback
             try:
                 evaluation = match_evaluator.evaluate(
