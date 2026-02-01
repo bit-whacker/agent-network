@@ -46,6 +46,10 @@ def health_check():
 def start_profile_building(email: str, name: str):
     """Start profile building process"""
     try:
+        # Validate inputs
+        if not email or not name:
+            raise HTTPException(status_code=400, detail="Email and name are required")
+
         # Create user if doesn't exist
         existing = execute_query(
             "SELECT id FROM users WHERE email = :email",
@@ -69,12 +73,23 @@ def start_profile_building(email: str, name: str):
         # Reset agent memory for new conversation
         profile_builder.reset(user_id_str)
 
-        # Get first question from agent
-        response = profile_builder.chat(
-            f"Hi! I'm {name}. I'd like to build my professional profile.",
-            user_id_str,
-            name
-        )
+        # Get first question from agent - wrap in try/except to handle API key issues
+        try:
+            response = profile_builder.chat(
+                f"Hi! I'm {name}. I'd like to build my professional profile.",
+                user_id_str,
+                name
+            )
+        except Exception as agent_error:
+            # If agent fails (e.g., missing API key), return a fallback response
+            print(f"Agent error: {agent_error}")
+            return {
+                "user_id": user_id_str,
+                "message": f"Hi {name}! I'm here to help you build your professional profile. Let's start - what is your current job title or professional role?",
+                "is_complete": False,
+                "profile_data": {},
+                "missing_fields": ["title", "skills", "experience_years", "availability", "location", "bio"]
+            }
 
         return {
             "user_id": user_id_str,
@@ -84,7 +99,10 @@ def start_profile_building(email: str, name: str):
             "missing_fields": response.get("missing_fields", [])
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Profile start error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -107,12 +125,22 @@ def continue_profile_chat(question: ProfileQuestion, user_id: UUID):
                 user_name = user_data[0]['name']
                 user_names[user_id_str] = user_name
 
-        # Chat with agent
-        response = profile_builder.chat(
-            question.user_message,
-            user_id_str,
-            user_name
-        )
+        # Chat with agent - wrap in try/except to handle API key issues
+        try:
+            response = profile_builder.chat(
+                question.user_message,
+                user_id_str,
+                user_name
+            )
+        except Exception as agent_error:
+            # If agent fails (e.g., missing API key), return a fallback response
+            print(f"Agent chat error: {agent_error}")
+            return {
+                "message": "I'm having trouble processing your message right now. Please try again in a moment.",
+                "is_complete": False,
+                "profile_data": {},
+                "missing_fields": ["title", "skills", "experience_years", "availability", "location", "bio"]
+            }
 
         return {
             "message": response["message"],
@@ -122,6 +150,7 @@ def continue_profile_chat(question: ProfileQuestion, user_id: UUID):
         }
 
     except Exception as e:
+        print(f"Profile chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -219,6 +248,13 @@ async def search_network(search: SearchRequest):
 
         request_id = request_result[0]['id']
 
+        # Broadcast to network
+        broadcast_result = execute_function(
+            "broadcast_request",
+            str(search.user_id),
+            str(request_id)
+        )
+
         # Evaluate each connected user
         matches = []
         for conn in connections:
@@ -234,6 +270,26 @@ async def search_network(search: SearchRequest):
             evaluation = match_evaluator.evaluate(
                 structured_query,
                 profile_data['profile']
+            # Evaluate match using agent - with fallback
+            try:
+                evaluation = match_evaluator.evaluate(
+                    structured_query,
+                    profile_data['profile']
+                )
+            except Exception as eval_err:
+                print(f"Match evaluation error: {eval_err}")
+                # Fallback to simple matching
+                evaluation = match_evaluator._simple_match(
+                    structured_query,
+                    profile_data['profile']
+                )
+
+            # Record response
+            execute_function(
+                "record_agent_response",
+                str(request_id),
+                conn_user_id,
+                json.dumps(evaluation)
             )
 
             if evaluation.get('is_match'):
@@ -284,12 +340,21 @@ def create_connection(connection: ConnectionCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/connections/{user_id}")
-def get_user_connections(user_id: UUID):
+def get_user_connections(user_id: str):
     """Get all connections for a user"""
     try:
-        connections = execute_function("get_connections", str(user_id))
+        # Validate user_id is a valid UUID
+        if not user_id or user_id == "undefined" or user_id == "null":
+            return {"connections": [], "error": "Invalid user ID"}
+
+        try:
+            UUID(user_id)
+        except ValueError:
+            return {"connections": [], "error": "Invalid user ID format"}
+
+        connections = execute_function("get_connections", user_id)
         return {"connections": connections or []}
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

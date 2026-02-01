@@ -9,11 +9,14 @@ let conversationStarted = false;
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadExistingUsers();
-    
+
     // Check if user is already logged in
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
         currentUser = JSON.parse(savedUser);
+        // Reset profile state on page load
+        profileData = {};
+        conversationStarted = false;
         showMainApp();
     }
 });
@@ -63,8 +66,18 @@ function selectExistingUser(user) {
         email: user.email,
         name: user.name
     };
-    
+
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+    // Reset profile state for the new user
+    profileData = {};
+    conversationStarted = false;
+    document.getElementById('profile-messages').innerHTML = '';
+    const progressDiv = document.getElementById('profile-progress');
+    if (progressDiv) progressDiv.style.display = 'none';
+    const previewDiv = document.getElementById('profile-data');
+    if (previewDiv) previewDiv.style.display = 'none';
+
     showMainApp();
 }
 
@@ -95,6 +108,8 @@ function showMainApp() {
 
 // Initialize profile building conversation
 async function initializeProfileChat() {
+    if (!currentUser || !currentUser.id) return;
+
     try {
         // Check if user already has a profile
         const profileResponse = await fetch(`${API_BASE}/api/profile/${currentUser.id}`);
@@ -152,6 +167,11 @@ function showTab(tabName) {
 // ============================================================================
 
 async function sendProfileMessage() {
+    if (!currentUser || !currentUser.id) {
+        addMessage('agent', 'Session error. Please log out and log back in.');
+        return;
+    }
+
     const input = document.getElementById('profile-input');
     const message = input.value.trim();
 
@@ -329,9 +349,14 @@ async function saveProfile() {
 // ============================================================================
 
 async function searchNetwork() {
+    if (!currentUser || !currentUser.id) {
+        alert('Session error. Please log out and log back in.');
+        return;
+    }
+
     const input = document.getElementById('search-input');
     const query = input.value.trim();
-    
+
     if (!query) {
         alert('Please enter a search query');
         return;
@@ -415,8 +440,8 @@ function displaySearchResults(data) {
 // ============================================================================
 
 async function loadConnections() {
-    if (!currentUser) return;
-    
+    if (!currentUser || !currentUser.id) return;
+
     try {
         const response = await fetch(`${API_BASE}/api/connections/${currentUser.id}`);
         const data = await response.json();
@@ -470,9 +495,14 @@ async function loadAllUsers() {
 }
 
 async function addConnection() {
+    if (!currentUser || !currentUser.id) {
+        alert('Session error. Please log out and log back in.');
+        return;
+    }
+
     const select = document.getElementById('connect-user-select');
     const otherUserId = select.value;
-    
+
     if (!otherUserId) {
         alert('Please select a user');
         return;
